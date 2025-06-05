@@ -144,6 +144,7 @@ class UnifiedDistributor {
     required bool cleanBeforeBuild,
     required Map<String, dynamic> buildArguments,
     Map<String, String>? variables,
+    String? postPackageWindowsCmd,
   }) async {
     List<MakeResult> makeResultList = [];
 
@@ -186,6 +187,36 @@ class UnifiedDistributor {
         }
 
         if (buildResult != null) {
+          // Execute custom Windows command if specified and platform is Windows
+          if (platform.toLowerCase() == 'windows' && 
+              postPackageWindowsCmd != null && 
+              postPackageWindowsCmd.isNotEmpty) {
+            logger.info('Executing post-build Windows command: $postPackageWindowsCmd');
+            try {
+              ProcessResult result = await Process.run(
+                'cmd',
+                ['/c', postPackageWindowsCmd],
+                workingDirectory: Directory.current.path,
+              );
+              
+              if (result.exitCode == 0) {
+                logger.info('Post-build command executed successfully'.brightGreen());
+                if (result.stdout.toString().isNotEmpty) {
+                  print(result.stdout);
+                }
+              } else {
+                logger.severe('Post-build command failed with exit code ${result.exitCode}'.red());
+                if (result.stderr.toString().isNotEmpty) {
+                  logger.severe(result.stderr.toString().red());
+                }
+                throw Exception('Post-build command failed');
+              }
+            } catch (error) {
+              logger.severe('Failed to execute post-build command: $error'.red());
+              rethrow;
+            }
+          }
+
           String buildMode =
               buildArguments.containsKey('profile') ? 'profile' : 'release';
           Map<String, dynamic>? arguments = {

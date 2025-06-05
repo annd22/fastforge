@@ -89,6 +89,12 @@ class CommandPackage extends Command {
         'You may add multiple \'--build-dart-define key=value\' pairs',
       ].join('\n'),
     );
+
+    argParser.addOption(
+      'post-package-windows-cmd',
+      valueHelp: 'command',
+      help: 'Command to execute after Windows build but before packaging (e.g., "call ./sign-file.bat")',
+    );
   }
 
   final UnifiedDistributor distributor;
@@ -115,6 +121,7 @@ class CommandPackage extends Command {
     final String? artifactName = argResults?['artifact-name'];
     final String? flutterBuildArgs = argResults?['flutter-build-args'];
     final bool isSkipClean = argResults?.wasParsed('skip-clean') ?? false;
+    final String? postPackageWindowsCmd = argResults?['post-package-windows-cmd'];
     final Map<String, dynamic> buildArguments =
         _generateBuildArgs(flutterBuildArgs);
 
@@ -136,6 +143,7 @@ class CommandPackage extends Command {
       artifactName: artifactName,
       cleanBeforeBuild: !isSkipClean,
       buildArguments: buildArguments,
+      postPackageWindowsCmd: postPackageWindowsCmd,
     );
   }
 
