@@ -193,56 +193,58 @@ class UnifiedDistributor {
               postPackageWindowsCmd.isNotEmpty) {
             logger.info('Executing post-package Windows command: $postPackageWindowsCmd');
             try {
-              // Parse command with proper quote handling
-              List<String> cmdArguments = [];
-              bool inQuotes = false;
-              StringBuffer currentArg = StringBuffer();
+              // Create a temporary batch file to execute the command
+              final tempDir = Directory.systemTemp;
+              final tempFile = File('${tempDir.path}\\fastforge_temp_cmd_${DateTime.now().millisecondsSinceEpoch}.bat');
               
-              for (int i = 0; i < postPackageWindowsCmd.length; i++) {
-                String char = postPackageWindowsCmd[i];
+              try {
+                // Process the command to properly handle paths with spaces
+                String processedCmd = postPackageWindowsCmd;
                 
-                if (char == '"') {
-                  // Handle escaped quotes
-                  if (i + 1 < postPackageWindowsCmd.length && postPackageWindowsCmd[i + 1] == '"') {
-                    currentArg.write('"');
-                    i++; // Skip next quote
-                  } else {
-                    inQuotes = !inQuotes;
-                  }
-                } else if (char == ' ' && !inQuotes) {
-                  if (currentArg.length > 0) {
-                    cmdArguments.add(currentArg.toString());
-                    currentArg.clear();
+                // Find all quoted paths and ensure they're properly formatted
+                final pathRegex = RegExp(r'"([^"]+)"');
+                processedCmd = processedCmd.replaceAllMapped(pathRegex, (match) {
+                  String path = match.group(1)!;
+                  // Remove any existing escaping to prevent double escaping
+                  path = path.replaceAll(r'\\', r'\');
+                  // Ensure the path is properly formatted for Windows
+                  path = path.replaceAll(r'/', r'\');
+                  return '"$path"';
+                });
+
+                // Write the command to the batch file
+                tempFile.writeAsStringSync('@echo off\nsetlocal enabledelayedexpansion\n$processedCmd', flush: true);
+                logger.info('Created temporary batch file: ${tempFile.path}');
+                logger.info('Processed command: $processedCmd');
+
+                // Execute the temporary batch file
+                ProcessResult result = await Process.run(
+                  tempFile.path,
+                  [],
+                  workingDirectory: Directory.current.path,
+                );
+
+                if (result.exitCode == 0) {
+                  logger.info('Post-package command executed successfully'.brightGreen());
+                  if (result.stdout.toString().isNotEmpty) {
+                    print(result.stdout);
                   }
                 } else {
-                  currentArg.write(char);
+                  logger.severe('Post-package command failed with exit code ${result.exitCode}'.red());
+                  if (result.stderr.toString().isNotEmpty) {
+                    logger.severe(result.stderr.toString().red());
+                  }
+                  if (result.stdout.toString().isNotEmpty) {
+                    logger.severe(result.stdout.toString().red());
+                  }
+                  throw Exception('Post-build command failed');
                 }
-              }
-              
-              // Add the last argument if any
-              if (currentArg.length > 0) {
-                cmdArguments.add(currentArg.toString());
-              }
-
-              logger.info('Parsed command arguments: $cmdArguments');
-              
-              ProcessResult result = await Process.run(
-                'cmd',
-                ['/c', ...cmdArguments],
-                workingDirectory: Directory.current.path,
-              );
-
-              if (result.exitCode == 0) {
-                logger.info('Post-package command executed successfully'.brightGreen());
-                if (result.stdout.toString().isNotEmpty) {
-                  print(result.stdout);
+              } finally {
+                // Clean up the temporary file
+                if (tempFile.existsSync()) {
+                  tempFile.deleteSync();
+                  logger.info('Cleaned up temporary batch file');
                 }
-              } else {
-                logger.severe('Post-package command failed with exit code ${result.exitCode}'.red());
-                if (result.stderr.toString().isNotEmpty) {
-                  logger.severe(result.stderr.toString().red());
-                }
-                throw Exception('Post-build command failed');
               }
             } catch (error) {
               logger.severe('Failed to execute post-build command: $error'.red());
