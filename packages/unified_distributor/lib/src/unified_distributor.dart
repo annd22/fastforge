@@ -162,7 +162,7 @@ class UnifiedDistributor {
       BuildResult? buildResult;
 
       for (String target in targets) {
-        logger.info('Packaging ${pubspec.name} ${pubspec.version} as $target:');
+        logger.info('Packaging ${pubspec.name} ${pubspec.version} as $target for ${platform.toLowerCase()}:');
         if (!isBuildOnlyOnce || (isBuildOnlyOnce && buildResult == null)) {
           try {
             buildResult = await _builder.build(
@@ -188,24 +188,57 @@ class UnifiedDistributor {
 
         if (buildResult != null) {
           // Execute custom Windows command if specified and platform is Windows
-          if (platform.toLowerCase() == 'windows' && 
-              postPackageWindowsCmd != null && 
+          if (platform.toLowerCase() == 'windows' &&
+              postPackageWindowsCmd != null &&
               postPackageWindowsCmd.isNotEmpty) {
-            logger.info('Executing post-build Windows command: $postPackageWindowsCmd');
+            logger.info('Executing post-package Windows command: $postPackageWindowsCmd');
             try {
+              // Parse command with proper quote handling
+              List<String> cmdArguments = [];
+              bool inQuotes = false;
+              StringBuffer currentArg = StringBuffer();
+              
+              for (int i = 0; i < postPackageWindowsCmd.length; i++) {
+                String char = postPackageWindowsCmd[i];
+                
+                if (char == '"') {
+                  // Handle escaped quotes
+                  if (i + 1 < postPackageWindowsCmd.length && postPackageWindowsCmd[i + 1] == '"') {
+                    currentArg.write('"');
+                    i++; // Skip next quote
+                  } else {
+                    inQuotes = !inQuotes;
+                  }
+                } else if (char == ' ' && !inQuotes) {
+                  if (currentArg.length > 0) {
+                    cmdArguments.add(currentArg.toString());
+                    currentArg.clear();
+                  }
+                } else {
+                  currentArg.write(char);
+                }
+              }
+              
+              // Add the last argument if any
+              if (currentArg.length > 0) {
+                cmdArguments.add(currentArg.toString());
+              }
+
+              logger.info('Parsed command arguments: $cmdArguments');
+              
               ProcessResult result = await Process.run(
                 'cmd',
-                ['/c', postPackageWindowsCmd],
+                ['/c', ...cmdArguments],
                 workingDirectory: Directory.current.path,
               );
-              
+
               if (result.exitCode == 0) {
-                logger.info('Post-build command executed successfully'.brightGreen());
+                logger.info('Post-package command executed successfully'.brightGreen());
                 if (result.stdout.toString().isNotEmpty) {
                   print(result.stdout);
                 }
               } else {
-                logger.severe('Post-build command failed with exit code ${result.exitCode}'.red());
+                logger.severe('Post-package command failed with exit code ${result.exitCode}'.red());
                 if (result.stderr.toString().isNotEmpty) {
                   logger.severe(result.stderr.toString().red());
                 }
@@ -216,6 +249,7 @@ class UnifiedDistributor {
               rethrow;
             }
           }
+
 
           String buildMode =
               buildArguments.containsKey('profile') ? 'profile' : 'release';
